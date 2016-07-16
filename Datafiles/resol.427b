@@ -1,0 +1,42 @@
+427b For Resol BS/4+ - Full parameter file
+# Name  SRC  DEST           Loc     Scale   Units   # Comment
+col     427b 0010       0       10.0    int     # S1 - COL
+tst     427b 0010       1       10.0    int     # S2 - TSTB
+trf     427b 0010       3       10.0    int     # S4 - TRFHQM
+ophr    427b 0010       5       1.0     int     # operating hours 
+# ophr for pump 2 is at location 7
+kwh     427b 0010       14      1000    int32 # Wh, kWh, MWh
+n1      427b 0010       4       1       int8     # Pump 1 speed
+n2      427b 0010       6       1       int8     # Pump 1 speed
+
+Params
+001	1	3	1	1	Arr	Arrangement
+030 30 100   1  30   nMN  Minimum Pump Speed
+039	0	1	2	0	OTC	Option: tube collector special
+03a	0	1	2	0	OREC	Option: recooling
+180	1.0	20.0	10	6.0	DTO	Switch on difference
+190	0.5	19.5	10	4.0	DTF	Switch off difference
+198	1.5	30.0	10	10.0	DTS	Difference for full pump speed
+19c	1	20	1	 2	RIS	Rise
+1b0	4	95	10	60	SMX	Store Max
+1c0	110	200	10	140	EM	Emergency shutdown temp
+1d0	100	190	10	120	CMX	Collector Max
+1e0	0	1	2	0	OCX	Option: Cooling
+1f0	10.0	90.0	10	10.0	CMN	Collector minimum
+200	0	1   2	0	OCN	Option: Collector minimum
+210	-10.0	10.0	10	4.0	CFR	Antifreeze temp
+220	0	1	2	0	OCF	Option: antifreeze
+d00 0   2   3   0   HND1 Relay1 Off=0, Auto=1, On=2
+d01 0   2   3   0   HND2 Relay2 Off=0, Auto=1, On=2
+e00	0	95.0	10	40.0	AHO	Aux thermostat On
+e01	0.0	95.0	10	45.0	AHF	Aux thermostat Off
+0e02	0	23.99	-1	0	t1O	Thermostat Off time
+e03	0	23.99	-1	0	t1F	Thermostat On time
+0e04	0	23.99	-1	0	t2O	Thermostat 2 Off time
+e05	0	23.99	-1	0	t2F	Thermostat 2 On time
+0e06	0	23.99	-1	0	t3O	Thermostat 3 Off time
+e07	0	23.99	-1	0	t3F	Thermostat 3 On time
+f00	0	2	1	0	OHQM	Heat Quantity Measurement
+f04	0.0	20.0	10	6.0	FMAX	Flow rate for Heat Measurement
+f06	0	3	1	1	MEDT	Antifreeze type
+f07	20	70	1	45	MED%	% Antifreeze

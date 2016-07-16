@@ -1,0 +1,55 @@
+4221 For Resol BS+ - Full parameter file
+1	1	9	1	1	Arr	Arrangement
+15	0	2	1	1	PRIO	Multiple Store Priority
+16	1	30	1	2	tSP	Oscillating break time
+17	1	30	1	15	tRUN	Oscillating run time
+26	0	2	3	1	HND1	Relay1 Off=0, Auto=1, On=2
+27	0	2	3	1	HND2	Relay2 Off=0, Auto=1, On=2
+30	30	100	1	30	nMN	Minumum pump speed
+31	30	100	1	30	n2MN	Minimum pump2 speed
+39	0	1	2	0	OTC	Option: tube collector special
+03a	0	1	1	0	OREC	Option: recooling
+c0	0	90	10	5.0	MN3O	Min Temp Regulation To Relay On
+c1	0	90	10	10.0	MN3F	Min Temp Regulation To Relay Off
+c2	0	95	10	60.0	MX3O	Max Temp Regulation To Relay On
+c3	0	95	10	58.0	MX3F	Max Temp Regulation To Relay Off
+180	1.0	20.0	10	6.0	DTO	Switch on difference
+181	1.0	20.0	10	6.0	DT2O	Switch on difference 2
+182	1.0	20.0	10	6.0	DT3O	Switch on difference 3
+190	0.5	19.5	10	4.0	DTF	Switch off difference
+191	0.5	19.5	10	4.0	DT2F	Switch off difference 2
+192	0.5	19.5	10	4.0	DT3F	Switch off difference 3
+198	1.5	30.0	10	10.0	DTS	Difference for full pump speed
+199	1.5	30.0	10	10.0	DT2S	Difference for full pump speed 2
+19a	1.5	30.0	10	10.0	DTS3	Difference for full pump speed 3
+19c	1	20	10	2.0	RIS	Rise
+19d	1	20	10	2.0	RIS2	Rise 2
+19e	1	20	10	2.0	RIS3	Rise 3
+1b0	4	95	10	60.0	SMX	Store Max
+1b1	4	95	10	60.0	S2MX	Store Max 2
+1c0	110	200	10	140.0	EM	Emergency shutdown temp
+1c1	110	200	10	140.0	EM2	Emergency shutdown temp 2
+1d0	100	190	10	120.0	CMX	Collector Max
+1d1	100	190	10	120.0	CMX2	Collector Max
+1e0	0	1	2	0	OCX	Option: Cooling
+1e1	0	1	2	0	OCX2	Option: Cooling 2
+1f0	10.0	90.0	10	10.0	CMN	Collector minimum
+1f1	10.0	90.0	10	10.0	CMN2	Collector minimum 2
+200	0	1	1	0	OCN	Option: Collector minimum
+201	0	1	1	0	OCN2	Option: Collector minimum 2
+210	-10.0	10.0	10	4.0	CFR	Antifreeze temp
+211	-10.0	10.0	10	4.0	CFR2	Antifreeze temp 2
+220	0	1	2	0	OCF	Option: antifreeze
+221	0	1	2	0	OCF2	Option: antifreeze 2
+e00	0	95.0	10	40.0	AHO	Aux thermostat On
+e01	0.0	95.0	10	45.0	AHF	Aux thermostat Off
+0e02	0	23.99	-1	0	t1O	Thermostat Off time
+e03	0	23.99	-1	0	t1F	Thermostat On time
+0e04	0	23.99	-1	0	t2O	Thermostat 2 Off time
+e05	0	23.99	-1	0	t2F	Thermostat 2 On time
+0e06	0	23.99	-1	0	t3O	Thermostat 3 Off time
+e07	0	23.99	-1	0	t3F	Thermostat 3 On time
+f00	0	1	2	0	OHQM	Heat Quantity Measurement
+f04	0.0	20.0	10	6.0	FMAX	Flow rate for Heat Measurement
+f06	0	3	1	1	MEDT	Antifreeze type
+f07	20	70	1	45	MED%	% Antifreeze

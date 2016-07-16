@@ -1,0 +1,587 @@
+/* RESOL Interface program */
+
+#include <stdio.h>	// for FILE
+#include <stdlib.h>	// for timeval
+#include <string.h>	// for strlen etc
+#include <time.h>	// for ctime
+#include <sys/types.h>	// for fd_set
+// #include <sys/socket.h>
+// #include <netinet/in.h>
+#include <netdb.h>	// for sockaddr_in 
+#include <fcntl.h>	// for O_RDWR
+#include <termios.h>	// for termios
+#include <unistd.h>		// for getopt
+#ifdef linux
+#include <errno.h>		// for Linux
+#endif
+
+#define PROGNAME "Resol"
+#define progname "resol"
+#define LOGON "resol"
+#define REVISION "$Revision: 1.1 $"
+/* 1.1 19/11/2007 Initial version copied from Elster 1.3
+
+*/
+
+static char* id="@(#)$Id: resol.c,v 1.1 2008/11/10 11:50:11 martin Exp $";
+
+#define PORTNO 10010
+#define LOGFILE "/tmp/" progname "%d.log"
+#define SERIALNAME "/dev/ttyAM0"	/* although it MUST be supplied on command line */
+
+// Severity levels.  ERROR and FATAL terminate program
+#define INFO	0
+#define	WARN	1
+#define	ERROR	2
+#define	FATAL	3
+// Socket retry params
+#define NUMRETRIES 3
+#define RETRYDELAY	1000000	/* microseconds */
+// Elster values expected
+#define NUMPARAMS 15
+// Set to if(0) to disable debugging
+#define DEBUG if(debug >= 1)
+#define DEBUG2 if(debug >=2)
+// If defined, send fixed data instead of timeout message
+// #define DEBUGCOMMS
+
+/* SOCKET CLIENT */
+
+/* Command line params: 
+1 - device name
+2 - device timeout. Default to 60 seconds
+3 - optional 'nolog' to suppress writing to local logfile
+*/
+
+#ifndef linux
+extern
+#endif
+int errno;  
+
+// Procedures in this file
+int openSerial(const char * name, int baud, int parity, int databits, int stopbits);  // return fd
+void closeSerial(int fd);  // restore terminal settings
+void sockSend(const char * msg);	// send a string
+int processSocket(void);			// process server message
+void logmsg(int severity, char *msg);	// Log a message to server and file
+void usage(void);					// standard usage message
+char * getversion(void);
+int getbuf(char * buf, int fd, int max);	// get a buffer full of message
+time_t timeMod(time_t t);
+void writedata(char * buf);			// send meter data
+void decode(char * msg);
+int get16bit(char a, char b, char c);			// Reassemble value. C must be a flag, ie byte & 0x4 or similar.
+
+/* GLOBALS */
+FILE * logfp = NULL;
+int sockfd = 0;
+int debug = 0;
+int noserver = 0;		// prevents socket connection when set to 1
+
+#define BUFSIZE 128	/* should be longer than max possible line of text from Elster */
+char serialbuf[BUFSIZE];	// data accumulates in this global
+char * serbufptr = &serialbuf[0];
+int controllernum = -1;	//	only used in logon message
+
+#define debugfp stderr
+
+/********/
+/* MAIN */
+/********/
+int main(int argc, char *argv[])
+// arg1: serial device file
+// arg2: optional timeout in seconds, default 60
+// arg3: optional 'nolog' to carry on when filesystem full
+{
+    int commfd;
+	int nolog = 0;
+
+    struct sockaddr_in serv_addr;
+    struct hostent *server;
+	char * serialName = SERIALNAME;
+	int interval = 60;
+	time_t next;
+
+    char buffer[256];
+	int run = 1;		// set to 0 to stop main loop
+	fd_set readfd; 
+	int numfds;
+	struct timeval timeout;
+	int tmout = 90;
+	int logerror = 0;
+	int online = 1;		// used to prevent messages every minute in the event of disconnection
+	int option; 
+	// Command line arguments
+	
+	// optind = -1;
+	opterr = 0;
+	while ((option = getopt(argc, argv, "dt:slV1i:Z")) != -1) {
+		switch (option) {
+		case 's': noserver = 1; break;
+		case 'l': nolog = 1; break;
+		case '?': usage(); exit(1);
+		case 't': tmout = atoi(optarg); break;
+		case 'd': debug++; break;
+//		case '1': single = 1; count = 1; current = 1; break;
+		case 'i': interval = atoi(optarg); break;
+		case 'V': printf("Version %s %s\n", getversion(), id); exit(0);
+		case 'Z': decode("(b+#Gjv~z`mcx-@ndd`rxbwcl9Vox=,/\x10\x17\x0e\x11\x14\x15\x11\x0b\x1a" 
+						 "\x19\x1a\x13\x0cx@NEEZ\\F\\ER\\\x19YTLDWQ'a-1d()#!/#(-9' >q\"!;=?51-??r"); exit(0);
+		}
+	}
+	
+	DEBUG printf("Debug on %d. optind %d argc %d\n", debug, optind, argc);
+	
+	if (optind < argc) serialName = argv[optind];		// get seria/device name: parameter 1
+	optind++;
+	if (optind < argc) controllernum = atoi(argv[optind]);	// get optional controller number: parameter 2
+	
+	sprintf(buffer, LOGFILE, controllernum);
+	
+	if (!nolog) if ((logfp = fopen(buffer, "a")) == NULL) logerror = errno;	
+	
+	// There is no point in logging the failure to open the logfile
+	// to the logfile, and the socket is not yet open.
+
+	sprintf(buffer, "STARTED %s on %s as %d timeout %d %s", argv[0], serialName, controllernum, tmout, nolog ? "nolog" : "");
+	logmsg(INFO, buffer);
+	
+	// Open serial port
+	if ((commfd = openSerial(serialName, B9600, 0, CS8, 1)) < 0) {
+		sprintf(buffer, "ERROR " PROGNAME " %d Failed to open %s: %s", controllernum, serialName, strerror(errno));
+#ifdef DEBUGCOMMS
+		logmsg(INFO, buffer);			// FIXME AFTER TEST
+		printf("Using stdio\n");
+		commfd = 0;		// use stdin
+#else
+		logmsg(FATAL, buffer);
+#endif
+	}
+
+	// Set up socket 
+	if (!noserver) {
+		sockfd = socket(AF_INET, SOCK_STREAM, 0);
+		if (sockfd < 0) 
+			logmsg(FATAL, "FATAL " PROGNAME " Creating socket");
+		server = gethostbyname("localhost");
+		if (server == NULL) {
+			logmsg(FATAL, "FATAL " PROGNAME " Cannot resolve localhost");
+		}
+		bzero((char *) &serv_addr, sizeof(serv_addr));
+		serv_addr.sin_family = AF_INET;
+		bcopy((char *)server->h_addr, 
+			 (char *)&serv_addr.sin_addr.s_addr,
+			 server->h_length);
+		serv_addr.sin_port = htons(PORTNO);
+		if (connect(sockfd,(struct sockaddr *) &serv_addr,sizeof(serv_addr)) < 0) {
+			sockfd = 0;
+			logmsg(ERROR, "ERROR " PROGNAME " Connecting to socket");
+		}	
+		
+		if (flock(commfd, LOCK_EX | LOCK_NB) == -1) {
+			sprintf(buffer, "FATAL " PROGNAME " is already running, cannot start another one on %s", serialName);
+			logmsg(FATAL, buffer);
+		}
+	
+		// Logon to server
+		sprintf(buffer, "logon " LOGON " %s %d %d", getversion(), getpid(), controllernum);
+		sockSend(buffer);
+	}
+	else	sockfd = 1;		// noserver: use stdout
+	
+	// If we failed to open the logfile and were NOT called with nolog, warn server
+	// Obviously don't use logmsg!
+	if (logfp == NULL && nolog == 0) {
+		sprintf(buffer, "event WARN " PROGNAME " %d could not open logfile %s: %s", controllernum, LOGFILE, strerror(logerror));
+		sockSend(buffer);
+	}
+		
+	numfds = (sockfd > commfd ? sockfd : commfd) + 1;		// nfds parameter to select. One more than highest descriptor
+
+	// Main Loop
+	FD_ZERO(&readfd); 
+	next = timeMod(interval);
+	DEBUG fprintf(stderr, "Now is %d next is %d\n", time(NULL), next);
+	while(run) {
+		timeout.tv_sec = tmout;
+		timeout.tv_usec = 0;
+		FD_SET(sockfd, &readfd);
+		FD_SET(commfd, &readfd);
+		if (select(numfds, &readfd, NULL, NULL, &timeout) == 0) {	// select timed out. Bad news 
+#ifdef DEBUGCOMMS
+			processLine("63;59;59;1976;53000;30;100;31;32;33;34;1;371;73;12345;");
+#else
+			if (online == 1) {
+				logmsg(WARN, "WARN " PROGNAME " No data for last period");
+				online = 0;	// Don't send a message every minute from now on
+			}
+#endif
+			continue;
+		}
+		if (FD_ISSET(commfd, &readfd)) { 
+			int num;
+			num = getbuf(buffer, commfd, 256);
+			online = 1;	// Back online
+			DEBUG2 fprintf(debugfp, "Got packet %d long\n", num);
+			if (num < 0) {
+				fprintf(stderr, "Error reading %s : %s\n", serialName, strerror(errno));
+				run = 0;
+				break;
+			} else {
+				if (time(NULL) > next) {
+					next = timeMod(interval);
+					DEBUG2 fprintf(stderr, "Calling writedata. Next = %d\n", next);
+					writedata(buffer);
+					DEBUG2 fprintf(stderr, "Back from writedata\n");
+				}
+			}
+		}
+		if ((noserver == 0) && FD_ISSET(sockfd, &readfd))
+			run = processSocket();	// the server may request a shutdown by setting run to 0
+	}
+	logmsg(INFO,"INFO " PROGNAME " Shutdown requested");
+	close(sockfd);
+	closeSerial(commfd);
+
+	return 0;
+}
+
+/*********/
+/* USAGE */
+/*********/
+void usage(void) {
+	printf("Usage: " progname " [-t timeout] [-l] [-s] [-d] [-V] /dev/ttyname controllernum\n");
+	printf("-l: no log  -s: no server  -d: debug on\n -V: version -1: single shot -i: interval in seconds\n");
+	return;
+}
+
+/**********/
+/* LOGMSG */
+/**********/
+void logmsg(int severity, char *msg)
+// Write error message to logfile and socket if possible and abort program for ERROR and FATAL
+// Truncate total message including timestamp to 200 bytes.
+
+// Globals used: sockfd logfp
+
+// Due to the risk of looping when you call this routine due to a problem writing on the socket,
+// set sockfd to 0 before calling it.
+
+{
+	char buffer[200];
+	time_t now;
+	if (strlen(msg) > 174) msg[174] = '\0';		// truncate incoming message string
+	now = time(NULL);
+	strcpy(buffer, ctime(&now));
+	buffer[24] = ' ';	// replace newline with a space
+	strcat(buffer, msg);
+	strcat(buffer, "\n");
+	if (logfp) {
+		fputs(buffer, logfp);
+		fflush(logfp);
+	} 
+	if (sockfd > 0) {
+		strcpy(buffer, "event ");
+		strcat(buffer, msg);
+		sockSend(buffer);
+	}
+    if (severity > WARN) {		// If severity is ERROR or FATAL terminate program
+		if (logfp) fclose(logfp);
+		if (sockfd) close(sockfd);
+		exit(severity);
+	}
+}
+
+// Static data
+struct termios oldSettings, newSettings; 
+
+/**************/
+/* OPENSERIAL */
+/**************/
+int openSerial(const char * name, int baud, int parity, int databits, int stopbits) {
+/* open serial device; return file descriptor or -1 for error (see errno) */
+	int fd, res;
+	
+	if ((fd = open(name, O_RDWR | O_NOCTTY)) < 0) return fd;	// an error code
+	
+	tcgetattr(fd, &oldSettings);
+	bzero(&newSettings, sizeof(newSettings));
+	// Control Modes
+	newSettings.c_cflag = databits | CLOCAL | CREAD;
+	if (stopbits == 2) 
+		newSettings.c_cflag |= CSTOPB;
+	// input modes
+	newSettings.c_iflag = IGNPAR;	//input modes
+	newSettings.c_oflag = 0;		// output modes
+	newSettings.c_lflag = 0;		// local flag
+	newSettings.c_cc[VTIME] = 0; // intercharacter timer */
+	newSettings.c_cc[VMIN] = 0;	// non-blocking read */
+	tcflush(fd, TCIFLUSH);		// discard pending data
+ 	if (cfsetspeed(&newSettings, baud))
+		perror("Setting serial port");
+	if((res = tcsetattr(fd, TCSANOW, &newSettings)) < 0) {
+		close(fd);	// if there's an error setting values, return the error code
+		return res;
+	}
+	return fd;
+}
+
+/***************/
+/* CLOSESERIAL */
+/***************/
+void closeSerial(int fd) {
+// Restore old serial port settings
+	tcsetattr(fd, TCSANOW, &oldSettings);
+	close(fd);
+}
+
+/************/
+/* SOCKSEND */
+/************/
+void sockSend(const char * msg) {
+// Send the string to the server.  May terminate the program if necessary
+	short int msglen, written;
+	int retries = NUMRETRIES;
+	
+	if(noserver) {	// shortcut when in test mode
+		puts(msg);
+		return;
+	}
+
+	msglen = strlen(msg);
+	written = htons(msglen);
+
+	if (write(sockfd, &written, 2) != 2) { // Can't even send length ??
+		sockfd = 0;		// prevent logmsg trying to write to socket!
+		logmsg(ERROR, "ERROR " PROGNAME " Can't write a length to socket");
+	}
+	while ((written = write(sockfd, msg, msglen)) < msglen) {
+		// not all written at first go
+			msg += written; msglen =- written;
+			printf("Only wrote %d; %d left \n", written, msglen);
+			if (--retries == 0) {
+				logmsg(WARN, "WARN " PROGNAME " Timed out writing to server"); 
+				return;
+			}
+			usleep(RETRYDELAY);
+	}
+}
+
+/*****************/
+/* PROCESSSOCKET */
+/*****************/
+int processSocket(void){
+// Deal with commands from MCP.  Return to 0 to do a shutdown
+	short int msglen, numread;
+	char buffer[128], buffer2[192];	// about 128 is good but rather excessive since longest message is 'truncate'
+	char * cp = &buffer[0];
+	int retries = NUMRETRIES;
+		
+	if (read(sockfd, &msglen, 2) != 2) {
+		logmsg(WARN, "WARN " PROGNAME " Failed to read length from socket");
+		return 1;
+	}
+	msglen =  ntohs(msglen);
+	while ((numread = read(sockfd, cp, msglen)) < msglen) {
+		cp += numread;
+		msglen -= numread;
+		if (--retries == 0) {
+			logmsg(WARN, "WARN " PROGNAME " Timed out reading from server");
+			return 1;
+		}
+		usleep(RETRYDELAY);
+	}
+	cp[numread] = '\0';	// terminate the buffer 
+	
+	if (strcmp(buffer, "exit") == 0)
+		return 0;	// Terminate program
+	if (strcmp(buffer, "Ok") == 0)
+		return 1;	// Just acknowledgement
+	if (strcmp(buffer, "truncate") == 0) {
+		if (logfp) {
+		// ftruncate(logfp, 0L);
+		// lseek(logfp, 0L, SEEK_SET);
+			freopen(NULL, "w", logfp);
+			logmsg(INFO, "INFO " PROGNAME " Truncated log file");
+		} else
+			logmsg(INFO, "INFO " PROGNAME " Log file not truncated as it is not open");
+		return 1;
+	}
+	if (strcmp(buffer, "debug 0") == 0) {	// turn off debug
+		debug = 0;
+		return 1;
+	}
+	if (strcmp(buffer, "debug 1") == 0) {	// enable debugging
+		debug = 1;
+		return 1;
+	}
+	if (strcmp(buffer, "help") == 0) {
+		strcpy(buffer2, "INFO " PROGNAME " Commands are: debug 0|1, exit, truncate, read");
+		logmsg(INFO, buffer2);
+		return 1;
+	}
+	if (strcmp(buffer, "read") == 0) {
+		return 2;	// to signal s full read
+	}
+	strcpy(buffer2, "INFO " PROGNAME " Unknown message from server: ");
+	strcat(buffer2, buffer);
+	logmsg(INFO, buffer2);	// Risk of loop: sending unknown message straight back to server
+	
+	return 1;	
+};
+
+/**************/
+/* GETVERSION */
+/**************/
+char *getversion(void) {
+// return pointer to version part of REVISION macro
+	static char version[10] = "";	// Room for xxxx.yyyy
+	if (!strlen(version)) {
+		strcpy(version, REVISION+11);
+		version[strlen(version)-2] = '\0';
+	}
+return version;
+}
+
+/**********/
+/* GETBUF */
+/**********/
+int getbuf(char * buf, int fd, int max) {
+// Read up to max chars into supplied buf. Return number
+// of chars read or negative error code if applicable
+
+	int numread, numtoread;
+	char *cp;
+	fd_set readfd; 
+	struct timeval timeout;
+	FD_ZERO(&readfd);
+
+sync:
+	usleep(100000);
+	while ((numread = read(fd, buf, 1)) < 1) {		// discard initial short reads;
+		DEBUG2 fprintf(debugfp, "Discarding short read of %d bytes (%02x)\n", numread, buf[1]);
+		if (numread < 0)
+			return numread;	// error with read
+		usleep(100000);
+	}
+	
+	if (buf[0] != 0xAA) {	// not synchronised - discard
+		DEBUG2 fprintf(debugfp, "Header is not AA - discarding %02x\n",	buf[0]);
+		goto sync;
+	}
+	while ((numread = read(fd, buf+1, 1)) < 1) {		// discard initial short reads;
+		DEBUG2 fprintf(debugfp, "Discarding short read of %d bytes (%02x)\n", numread, buf[1]);
+		if (numread < 0)
+			return numread;	// error with read
+		usleep(100000);
+	}
+	
+	if (buf[1] != 0x10) {	// not synchronised - discard
+		DEBUG2 fprintf(debugfp, "Header2 is not 10 - discarding %02x\n", buf[0]);
+		goto sync;
+	}
+	
+	numtoread = 66; // subtract the 4 we've already read but add the 6 for headers.
+	DEBUG2 fprintf(debugfp, "Got %d, %d to go ..", numread, numtoread);
+	cp = buf + 2;
+	while (numtoread > 0) {
+		timeout.tv_sec = 90;
+		timeout.tv_usec = 0;
+		FD_SET(fd, &readfd);
+		if (select(fd + 1, &readfd, NULL, NULL, &timeout)) {
+			
+			numread = read(fd, cp, numtoread);
+			if (numread < 0) return numread;
+			cp += numread;
+			numtoread -= numread;
+			DEBUG2 fprintf(debugfp, "Got %d, %d to go .. ", numread, numtoread);
+			usleep(100000);		// Allow a few characters to pile up.
+		} else return 0;	// the select timed out
+	}
+	return cp - buf;
+}
+
+/*************/
+/* WRITEDATA */
+/*************/
+void writedata(char * buf) {
+// write a data record of two values
+	char msg[120];
+	float t1, t2, t3, t4;
+	int relay, wh, kwh, mwh;
+// 	int relay, speed, pump1, pump2, minutes, hours, wh, kwh;
+	t1 = get16bit(buf[10], buf[11], buf[14] & 3) / 10.0;
+	t2 = get16bit(buf[12], buf[13], (buf[14] & 0xc) >> 2) / 10.0;
+	t3 = get16bit(buf[16], buf[17], buf[20] & 3) / 10.0;
+	t4 = get16bit(buf[18], buf[19], (buf[20] & 0xc) >> 2) / 10.0;
+	relay = buf[24];
+	// speed = 126 - buf[27];
+	// if (speed < 0) speed = 0;
+	// minutes = get16bit(buf[28], buf[29], buf[32] & 1);
+	// hours = minutes / 60;
+	// minutes = minutes % 60;
+	// pump1 = get16bit(buf[34], buf[35], (buf[38] & 3));
+	// pump2 = get16bit(buf[36], buf[37], buf[38] & 4);
+	wh = get16bit(buf[40], buf[41], buf[44] & 3);
+	kwh = get16bit(buf[42], buf[43], (buf[44] & 0xc) >> 2);
+	mwh = get16bit(buf[46], buf[47], buf[50] & 3);	 //TODO the last bit is a guess.
+	
+	sprintf(msg, "data 6 %d.%03d %.1f %.1f %.1f %.1f %d", mwh * 1000 + kwh, wh, t1, t2, t3, t4, relay);	
+	DEBUG fprintf(stderr, "Writedata sending '%s'\n", msg);
+	sockSend(msg);
+	
+	// This device is not only data but a meter
+	
+	sprintf(msg, "meter 1 %d.%03d", mwh * 1000 + kwh, wh);
+	DEBUG fprintf(stderr, "Writedata sending '%s'\n", msg);
+	sockSend(msg);
+}
+
+/************/
+/* GET16BIT */
+/************/
+int get16bit(char a, char b, char c) {
+// byte a: Bits 0 to 6. 
+// byte b: Bits 8 to 14
+// if c is nonzero, treat it as bit 7.  As the bit 7 can be stored on any bit in byte c
+	int val = a + (b << 8);
+	DEBUG2 fprintf(stderr, "Get16Bit %02x %02x %02x ", a, b, c);
+	if (c & 1) val += 128;
+	if (c & 2) val = val - 32768;
+return val;
+}
+
+/***********/
+/* TIMEMOD */
+/***********/
+time_t timeMod(time_t interval) {
+	// Return a time in the future at modulus t;
+	// ie, if t = 3600 (1 hour) the time returned
+	// will be the next time on the hour.
+	//	time_t now = time(NULL);
+	char buffer[20];
+	if (interval == 0) interval = 600;
+	time_t t = time(NULL);
+	time_t newt =  (t / interval) * interval + interval;
+	DEBUG {
+		struct tm * tm;
+		tm = localtime(&t);
+		strftime(buffer, sizeof(buffer), "%F %T", tm);
+		fprintf(stderr,"TimeMod now = %s delta = %d ", buffer, interval);
+		tm = localtime(&newt);
+		strftime(buffer, sizeof(buffer), "%F %T", tm);
+		fprintf(stderr, "result %s\n", buffer);
+	} 
+	return newt;
+}
+
+/**********/
+/* DECODE */
+/**********/ 
+void decode(char * msg) {
+	// Algorithm - each byte X-ored' with a successively higher integer.
+	char * cp;
+	char i = 0;
+	for (cp = msg; *cp; cp++) putchar(*cp ^ i++);
+	putchar('\n');
+}

@@ -1,0 +1,28 @@
+4278 For Resol BS/3 - Full parameter file
+1	1	9	1	1	Arr	Arrangement
+39	0	1	1	0	OTC	Option: tube collector special
+03a	0	1	1	0	OREC	Option: recooling
+180	1.0	20.0	10	6.0	DTO	Switch on difference
+190	0.5	19.5	10	4.0	DTF	Switch off difference
+1b0	4.0	95.0	10	60.0	SMX	Store Max
+1c0	110.0	200.0	10	140.0	EM	Emergency shutdown temp
+1d0	100.0	190.0	10	120.0	CMX	Collector Max
+1e0	0	1	1	0	OCX	Option: Cooling
+1f0	10.0	90.0	10	10.0	CMN	Collector minimum
+200	0	1	1	0	OCN	Option: Collector minimum
+210	-10.0	10.0	10	4.0	CFR	Antifreeze temp
+220	0	1	1	0	OCF	Option: antifreeze
+d00	0	3	1	1	HND1	Relay1 Off=0, Auto=1, On=2
+d01	0	3	1	1	HND2	Relay2 Off=0, Auto=1, On=2
+e00	0	95.0	10	40.0	AHO	Aux thermostat On
+e01	0.0	95.0	10	45.0	AHF	Aux thermostat Off
+0e02	0	23.99	-1	0	t1O	Thermostat Off time
+e03	0	23.99	-1	0	t1F	Thermostat On time
+0e04	0	23.99	-1	0	t2O	Thermostat 2 Off time
+e05	0	23.99	-1	0	t2F	Thermostat 2 On time
+0e06	0	23.99	-1	0	t3O	Thermostat 3 Off time
+e07	0	23.99	-1	0	t3F	Thermostat 3 On time
+f00	0	1	1	0	OHQM	Heat Quantity Measurement
+f04	0.0	20.0	10	6.0	FMAX	Flow rate for Heat Measurement
+f06	0	3	1	1	MEDT	Antifreeze type
+f07	20	70	1	45	MED%	% Antifreeze

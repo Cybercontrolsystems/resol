@@ -1,0 +1,11 @@
+7421 Resol BX+
+# Name  SRC  DEST 	    Loc     Scale   Units   # Comment
+col     7421 0010       0       10.0    int     # S1 - COL
+tst     7421 0010       1       10.0    int     # S2 - TSTB
+trf     7421 0010       3       10.0    int     # S4 - TRFHQM
+ophr    7421 0010       14      3600    int32   # operting hours in seconds
+kwh     7421 0010       16      1000    watts48 # Wh, kWh, MWh
+n1      7421 0010       12      1       int     # Pump 1 speed
+n2      7421 0010       13      1       int     # Pump 2 speed
+
+params - not known for this model

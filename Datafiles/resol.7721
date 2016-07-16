@@ -1,0 +1,11 @@
+7721 Resol E - small parameter file
+1f0	0	2	1	1	AllRelays	All Relays
+1f1	0	2	1	1	Relay1		Relay 1
+1f2	0	2	1	1	Relay2		Relay 2
+1f3	0	2	1	1	Relay3		Relay 3
+1f4	0	2	1	1	Relay4		Relay 4
+1f5	0	2	1	1	Relay5		Relay 5
+1f6	0	2	1	1	Relay6		Relay 6
+1f7	0	2	1	1	Relay7		Relay 7
+2dd	4	95	10	60	TstMax		Thermal Store Max
+
